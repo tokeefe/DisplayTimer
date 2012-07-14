@@ -8,6 +8,7 @@ time viewer.
 
 :version: 0.1
 '''
+import os
 import time
 import argparse
 import serial
@@ -33,6 +34,7 @@ def main():
 	dev = serial.Serial(args.block_device, args.baud)
 	dev.nonblocking()
 	stack = collections.deque(maxlen=args.x_length)
+	args.output_file = os.path.expanduser(args.output_file)
 	daq = DAQ(device=dev, buff=stack, sampling_rate=args.sampling_rate, outfile=args.output_file)
 
 	## --- initialize plot
@@ -63,6 +65,7 @@ def main():
 		else:
 			## --- threads in python are screwy
 			time.sleep(0)
+
 import sys
 import time
 import threading
@@ -96,10 +99,11 @@ class DAQ(threading.Thread):
 					counter = 1
 				counter += 1
 			try:
-				point = self.device.readline()
+				data = self.device.readline()
+				level,ms = data.split(",")
 				if self.outfile:
-					self.outfile.write(point)
-				self.buff.appendleft(int(point))
+					self.outfile.write(data)
+				self.buff.appendleft(int(level))
 			except ValueError, e:
 				pass
 
