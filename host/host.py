@@ -22,16 +22,18 @@ def main():
 	parser.add_argument('-x', '--x-length', required=True, type=int, help='Length of X axis')
 	parser.add_argument('-p', '--plot', action='store_true', help='Plot data in [near] real-time')
 	parser.add_argument('-s', '--sampling-rate', action='store_true', help='Display sampling rate')
+	parser.add_argument('--y-min', type=int, default=0, help='Minimum y value')
+	parser.add_argument('--y-max', type=int, default=1024, help='Maximum y value')
 	parser.add_argument('-o', '--output-file', help='Save data to file')
 	args = parser.parse_args()
 	
-	y_lim = [0, 1024]
+	y_lim = [args.y_min, args.y_max]
 
 	## --- initialize DAQ
 	dev = serial.Serial(args.block_device, args.baud)
 	dev.nonblocking()
 	stack = collections.deque(maxlen=args.x_length)
-	daq = DAQ(device=dev, buff=stack, sampling_rate=args.sampling_rate)
+	daq = DAQ(device=dev, buff=stack, sampling_rate=args.sampling_rate, outfile=args.output_file)
 
 	## --- initialize plot
 	if args.plot:
@@ -69,14 +71,19 @@ class DAQ(threading.Thread):
 	'''
 	Data Acquisition thread
 	'''
-	def __init__(self, device, buff, sampling_rate=False):
+	def __init__(self, device, buff, sampling_rate=False, outfile=None):
 		threading.Thread.__init__(self)
 		self.buff = buff
 		self.device = device
 		self.fileno = self.device.fileno()
 		self.sampling_rate = sampling_rate
+		self.outfile = outfile
 
 	def run(self):
+		## --- open handle on output fiile
+		if self.outfile:
+			self.outfile = open(self.outfile, 'wb')
+
 		## --- we want to collect data as fast as possible
 		t0 = time.time()
 		counter = 1
@@ -89,8 +96,10 @@ class DAQ(threading.Thread):
 					counter = 1
 				counter += 1
 			try:
-				point = int(self.device.readline())
-				self.buff.appendleft(point)
+				point = self.device.readline()
+				if self.outfile:
+					self.outfile.write(point)
+				self.buff.appendleft(int(point))
 			except ValueError, e:
 				pass
 
