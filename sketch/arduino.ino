@@ -1,7 +1,7 @@
 #include <stdlib.h>
 
-// analog pin 0
 int pin = 0;
+char out[16];
 
 void setup()
 {
@@ -10,6 +10,6 @@ void setup()
 
 void loop()
 {
-  int level = analogRead(pin);
-  Serial.println(level);
+  sprintf(out, "%i,%u\n", analogRead(pin), millis());
+  Serial.print(out);
 }
