@@ -9,6 +9,7 @@ time viewer.
 :version: 0.1
 '''
 import os
+import sys
 import time
 import argparse
 import serial
@@ -30,13 +31,9 @@ def main():
 	
 	y_lim = [args.y_min, args.y_max]
 
-	## --- initialize DAQ
-	dev = serial.Serial(args.block_device, args.baud)
-	dev.nonblocking()
-	stack = collections.deque(maxlen=args.x_length)
+	## --- expand output file
 	if args.output_file:
 		args.output_file = os.path.expanduser(args.output_file)
-	daq = DAQ(device=dev, buff=stack, sampling_rate=args.sampling_rate, outfile=args.output_file)
 
 	## --- initialize plot
 	if args.plot:
@@ -50,6 +47,13 @@ def main():
 		plt.ylim(y_lim)
 		plt.ylabel('light level', color='0.5')
 	
+	## --- initialize DAQ
+	dev = serial.Serial(port=args.block_device, baudrate=args.baud, timeout=.5)
+	dev.nonblocking()
+	stack = collections.deque(maxlen=args.x_length)
+	daq = DAQ(device=dev, buff=stack, sampling_rate=args.sampling_rate, 
+		  outfile=args.output_file)
+
 	## --- create y buffer
 	for i in range(args.x_length):
 		stack.append(0)
@@ -61,12 +65,12 @@ def main():
 	## --- plot data
 	while 1:
 		## --- provoke context switch
-		time.sleep(5)
-		
 		if args.plot:
 			line.set_ydata(stack)
 			plt.draw()
-	
+		## --- instigate context switch
+		time.sleep(0)
+
 import sys
 import time
 import select
@@ -82,15 +86,15 @@ class DAQ(threading.Thread):
 		self.device = device
 		self.sampling_rate = sampling_rate
 		self.outfile = outfile
-
+	
 	def run(self):
 		## --- open handle on output fiile
 		if self.outfile:
 			self.outfile = open(self.outfile, 'wb')
 
-		## --- send arduino the start byte
-		self.device.write(chr(255))
-
+		## --- sync with device
+		self.handshake()
+	
 		## --- we want to collect data as fast as possible
 		t0 = time.time()
 		counter = 1
@@ -115,7 +119,21 @@ class DAQ(threading.Thread):
 				if self.outfile:
 					self.outfile.write(data)
 			except ValueError, e:
+				print(e)
 				pass
-
+	def handshake(self):
+		while 1:
+			readables,writables,_ = select.select([self.device], [self.device], [])
+			if writables:
+				self.device.write(chr(255))
+			if readables:
+				try:
+					val = self.device.readline()
+					if int(val) == 255:
+						print('ACK')
+						return True
+				except ValueError, e:
+					pass
+	
 if __name__ == '__main__':
 	main()
