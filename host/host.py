@@ -34,7 +34,8 @@ def main():
 	dev = serial.Serial(args.block_device, args.baud)
 	dev.nonblocking()
 	stack = collections.deque(maxlen=args.x_length)
-	args.output_file = os.path.expanduser(args.output_file)
+	if args.output_file:
+		args.output_file = os.path.expanduser(args.output_file)
 	daq = DAQ(device=dev, buff=stack, sampling_rate=args.sampling_rate, outfile=args.output_file)
 
 	## --- initialize plot
@@ -59,15 +60,16 @@ def main():
 
 	## --- plot data
 	while 1:
+		## --- provoke context switch
+		time.sleep(5)
+		
 		if args.plot:
 			line.set_ydata(stack)
 			plt.draw()
-		else:
-			## --- threads in python are screwy
-			time.sleep(0)
-
+	
 import sys
 import time
+import select
 import threading
 
 class DAQ(threading.Thread):
@@ -78,7 +80,6 @@ class DAQ(threading.Thread):
 		threading.Thread.__init__(self)
 		self.buff = buff
 		self.device = device
-		self.fileno = self.device.fileno()
 		self.sampling_rate = sampling_rate
 		self.outfile = outfile
 
@@ -87,10 +88,14 @@ class DAQ(threading.Thread):
 		if self.outfile:
 			self.outfile = open(self.outfile, 'wb')
 
+		## --- send arduino the start byte
+		self.device.write(chr(255))
+
 		## --- we want to collect data as fast as possible
 		t0 = time.time()
 		counter = 1
 		while 1:
+			## --- if user asks for sampling rate
 			if self.sampling_rate:
 				if time.time() - t0 >= 1:
 					t0 = time.time()
@@ -99,11 +104,16 @@ class DAQ(threading.Thread):
 					counter = 1
 				counter += 1
 			try:
-				data = self.device.readline()
-				level,ms = data.split(",")
+				## --- read from serial port and store on stack
+				readables,_,_ = select.select([self.device], [], [])
+				if readables:
+					data = self.device.readline()
+					level,ms = data.split(",")
+					self.buff.appendleft(int(level))
+
+				## --- if user asks for logging
 				if self.outfile:
 					self.outfile.write(data)
-				self.buff.appendleft(int(level))
 			except ValueError, e:
 				pass
 
